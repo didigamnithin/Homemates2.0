@@ -76,9 +76,15 @@ push_to_github() {
     fi
     
     # Add all changes (excluding .env files)
+    # First, ensure .env files are not tracked
+    git rm --cached .env .env.* 2>/dev/null || true
+    # Add all files
     git add .
-    # Remove .env files from staging if they were added
+    # Explicitly remove .env files from staging if they were added
     git reset HEAD .env .env.local .env.* 2>/dev/null || true
+    # Also remove from any subdirectories
+    find . -name ".env" -not -path "./.git/*" -exec git reset HEAD {} \; 2>/dev/null || true
+    find . -name ".env.*" -not -path "./.git/*" -not -name ".env.example" -exec git reset HEAD {} \; 2>/dev/null || true
     
     # Check if there are changes to commit
     if git diff --staged --quiet && git diff --quiet; then
