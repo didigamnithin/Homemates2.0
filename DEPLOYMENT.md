@@ -73,9 +73,9 @@ JWT_EXPIRES_IN=7d
 PERPLEXITY_API_KEY=your-perplexity-api-key
 
 # DesiVocal (Ringg AI) - Optional
-RINGG_API_KEY=your-ringg-api-key
-RINGG_AGENT_ID_INBOUND=93a4364f-562a-49bf-9aa4-fba317f7c1b4
-RINGG_AGENT_ID_OUTBOUND=7fbc224c-8efe-4a21-a01f-e6f5117f0672
+RINGG_API_KEY=your-5d001a13-f975-4baa-a8b6-e61fce1e8e98
+RINGG_AGENT_ID_INBOUND=91312a1a-f2c3-42dc-a0c7-4e532d90257b
+RINGG_AGENT_ID_OUTBOUND=752c2ef5-086d-475a-87ca-c84708d4c49a
 
 # File Upload Configuration
 MAX_FILE_SIZE=10485760
@@ -163,7 +163,7 @@ Google Cloud Run is a fully managed serverless platform that automatically scale
 2. **Set Environment Variables**:
    ```bash
    gcloud run services update homemates-backend \
-     --update-env-vars "JWT_SECRET=your-secret-key,PERPLEXITY_API_KEY=your-key,RINGG_API_KEY=your-ringg-key,RINGG_AGENT_ID_OUTBOUND=7fbc224c-8efe-4a21-a01f-e6f5117f0672,FRONTEND_URL=https://your-frontend-domain.com" \
+     --update-env-vars "JWT_SECRET=your-secret-key,PERPLEXITY_API_KEY=your-key,RINGG_API_KEY=5d001a13-f975-4baa-a8b6-e61fce1e8e98,RINGG_AGENT_ID_OUTBOUND=752c2ef5-086d-475a-87ca-c84708d4c49a,FRONTEND_URL=https://your-frontend-domain.com" \
      --region us-central1
    ```
 
@@ -178,7 +178,7 @@ Google Cloud Run is a fully managed serverless platform that automatically scale
      --region us-central1
    
    gcloud run services update homemates-backend \
-     --set-env-vars "RINGG_API_KEY=your-ringg-key" \
+     --set-env-vars "RINGG_API_KEY=5d001a13-f975-4baa-a8b6-e61fce1e8e98" \
      --region us-central1
    
    gcloud run services update homemates-backend \
