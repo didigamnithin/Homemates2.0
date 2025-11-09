@@ -122,21 +122,40 @@ push_to_github() {
 
 # Function to deploy backend to Google Cloud Run
 deploy_backend() {
-    print_info "Deploying backend to Google Cloud Run..."
+    echo ""
+    print_info "═══════════════════════════════════════════════════════════"
+    print_info "🚀 BACKEND DEPLOYMENT - Google Cloud Run"
+    print_info "═══════════════════════════════════════════════════════════"
+    echo ""
     
     local current_dir=$(pwd)
     cd "$SCRIPT_DIR/backend"
     
-    # Build and push Docker image
-    print_info "Building Docker image..."
+    # Step 1: Build Docker image
+    print_info "📦 Step 1/3: Building Docker image..."
+    print_info "   Project: ${PROJECT_ID}"
+    print_info "   Image: ${IMAGE_NAME}"
+    print_info "   This may take a few minutes..."
+    echo ""
+    
     gcloud builds submit --tag ${IMAGE_NAME} --project=${PROJECT_ID} || {
-        print_error "Failed to build Docker image"
+        print_error "❌ Failed to build Docker image"
+        print_error "   Check the logs above for details"
         cd "$current_dir"
         return 1
     }
     
-    # Deploy to Cloud Run
-    print_info "Deploying to Cloud Run..."
+    print_success "✅ Docker image built successfully!"
+    echo ""
+    
+    # Step 2: Deploy to Cloud Run
+    print_info "🚀 Step 2/3: Deploying to Google Cloud Run..."
+    print_info "   Service: ${SERVICE_NAME}"
+    print_info "   Region: ${REGION}"
+    print_info "   Memory: 512Mi, CPU: 1"
+    print_info "   This may take 1-2 minutes..."
+    echo ""
+    
     gcloud run deploy ${SERVICE_NAME} \
         --image ${IMAGE_NAME} \
         --platform managed \
@@ -150,55 +169,109 @@ deploy_backend() {
         --timeout 300 \
         --set-env-vars "NODE_ENV=production" \
         --project=${PROJECT_ID} || {
-        print_error "Failed to deploy to Cloud Run"
+        print_error "❌ Failed to deploy to Cloud Run"
+        print_error "   Check the logs above for details"
         cd "$current_dir"
         return 1
     }
     
-    # Get service URL
+    print_success "✅ Backend deployed to Cloud Run successfully!"
+    echo ""
+    
+    # Step 3: Get service URL
+    print_info "🔗 Step 3/3: Getting service URL..."
     BACKEND_URL=$(gcloud run services describe ${SERVICE_NAME} \
         --region ${REGION} \
         --format 'value(status.url)' \
         --project=${PROJECT_ID})
     
-    print_success "Backend deployed successfully!"
-    print_info "Backend URL: $BACKEND_URL"
+    echo ""
+    print_success "═══════════════════════════════════════════════════════════"
+    print_success "✅ BACKEND DEPLOYMENT COMPLETE!"
+    print_success "═══════════════════════════════════════════════════════════"
+    print_info "🌐 Backend URL: $BACKEND_URL"
+    print_info "📝 Don't forget to set environment variables:"
+    print_info "   gcloud run services update ${SERVICE_NAME} \\"
+    print_info "     --update-env-vars \"JWT_SECRET=...,PERPLEXITY_API_KEY=...,RINGG_API_KEY=...\" \\"
+    print_info "     --region ${REGION} --project=${PROJECT_ID}"
+    echo ""
     
     cd "$current_dir"
 }
 
 # Function to deploy frontend to Vercel
 deploy_frontend() {
-    print_info "Deploying frontend to Vercel..."
+    echo ""
+    print_info "═══════════════════════════════════════════════════════════"
+    print_info "🎨 FRONTEND DEPLOYMENT - Vercel"
+    print_info "═══════════════════════════════════════════════════════════"
+    echo ""
     
     local current_dir=$(pwd)
     cd "$SCRIPT_DIR/frontend"
     
-    # Check if vercel is installed
+    # Step 1: Check Vercel CLI
+    print_info "🔍 Step 1/4: Checking Vercel CLI installation..."
     if ! command -v vercel &> /dev/null; then
-        print_warning "Vercel CLI not found. Installing..."
-        npm install -g vercel
-    fi
-    
-    # Check if project is linked to Vercel
-    if [ ! -f ".vercel/project.json" ]; then
-        print_warning "Project not linked to Vercel. Linking..."
-        vercel link --yes || {
-            print_error "Failed to link project to Vercel"
+        print_warning "⚠️  Vercel CLI not found. Installing..."
+        print_info "   This may take a minute..."
+        npm install -g vercel || {
+            print_error "❌ Failed to install Vercel CLI"
             cd "$current_dir"
             return 1
         }
+        print_success "✅ Vercel CLI installed successfully!"
+    else
+        print_success "✅ Vercel CLI is installed"
     fi
+    echo ""
     
-    # Deploy to Vercel
-    print_info "Deploying to Vercel (production)..."
+    # Step 2: Check project linking
+    print_info "🔗 Step 2/4: Checking Vercel project link..."
+    if [ ! -f ".vercel/project.json" ]; then
+        print_warning "⚠️  Project not linked to Vercel. Linking..."
+        print_info "   You may need to authenticate and select your project"
+        vercel link --yes || {
+            print_error "❌ Failed to link project to Vercel"
+            print_error "   Run 'vercel link' manually in the frontend directory"
+            cd "$current_dir"
+            return 1
+        }
+        print_success "✅ Project linked to Vercel successfully!"
+    else
+        print_success "✅ Project is already linked to Vercel"
+    fi
+    echo ""
+    
+    # Step 3: Deploy to Vercel
+    print_info "🚀 Step 3/4: Deploying to Vercel (production)..."
+    print_info "   This may take 2-3 minutes..."
+    print_info "   Building and deploying your Next.js app..."
+    echo ""
+    
     vercel --prod --yes || {
-        print_error "Failed to deploy to Vercel"
+        print_error "❌ Failed to deploy to Vercel"
+        print_error "   Check the logs above for details"
         cd "$current_dir"
         return 1
     }
     
-    print_success "Frontend deployed to Vercel successfully!"
+    print_success "✅ Frontend deployed to Vercel successfully!"
+    echo ""
+    
+    # Step 4: Get deployment URL
+    print_info "🔗 Step 4/4: Getting deployment URL..."
+    FRONTEND_URL=$(vercel ls --prod --json 2>/dev/null | grep -o '"url":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "Check Vercel dashboard")
+    
+    echo ""
+    print_success "═══════════════════════════════════════════════════════════"
+    print_success "✅ FRONTEND DEPLOYMENT COMPLETE!"
+    print_success "═══════════════════════════════════════════════════════════"
+    print_info "🌐 Frontend URL: $FRONTEND_URL"
+    print_info "📝 Don't forget to set NEXT_PUBLIC_API_URL in Vercel:"
+    print_info "   Vercel Dashboard → Settings → Environment Variables"
+    print_info "   Add: NEXT_PUBLIC_API_URL=https://your-backend-url"
+    echo ""
     
     cd "$current_dir"
 }
