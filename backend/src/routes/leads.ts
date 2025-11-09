@@ -11,57 +11,132 @@ import { createError } from '../middleware/errorHandler';
 export const leadsRouter = Router();
 leadsRouter.use(authenticate);
 
-// Get all leads
+// Get all leads (show tenants.csv as leads)
 leadsRouter.get('/', async (req: AuthRequest, res, next) => {
   try {
     const { owner_id, tenant_id, property_id, status } = req.query;
     
-    const filters: any = {};
-    if (tenant_id) filters.tenant_id = tenant_id as string;
-    if (property_id) filters.property_id = property_id as string;
-    if (status) filters.status = status as string;
+    // Get all tenants as leads
+    const tenants = await csvStorage.getTenants();
     
-    // If owner_id is provided, filter leads for that owner's properties
-    let leads;
+    // Get owner's properties for matching
+    let ownerProperties: any[] = [];
     if (owner_id) {
-      leads = await csvStorage.getLeads({ ...filters, owner_id: owner_id as string });
+      ownerProperties = await csvStorage.getProperties({ owner_id: owner_id as string });
     } else {
-      leads = await csvStorage.getLeads(filters);
+      // Get all properties for matching
+      ownerProperties = await csvStorage.getProperties();
     }
     
-    // Enrich leads with tenant and property information
-    const enrichedLeads = await Promise.all(
-      leads.map(async (lead) => {
-        const tenant = lead.tenant_id 
-          ? await csvStorage.getTenantById(lead.tenant_id)
-          : null;
-        const property = lead.property_id
-          ? await csvStorage.getPropertyById(lead.property_id)
-          : null;
+    // Convert tenants to leads format with matching
+    const leads = await Promise.all(
+      tenants.map(async (tenant) => {
+        // Find matching properties based on tenant requirements
+        const matchingProperties = ownerProperties.filter((prop) => {
+          let matches = 0;
+          
+          // Match locality (nearby matching)
+          if (tenant.localities && prop.locality) {
+            const tenantLocalities = tenant.localities.toLowerCase().split(',').map((l: string) => l.trim());
+            const propLocality = prop.locality.toLowerCase();
+            if (tenantLocalities.some((loc: string) => propLocality.includes(loc) || loc.includes(propLocality))) {
+              matches++;
+            }
+          }
+          
+          // Match budget (within ±20%)
+          if (tenant.budget_min && tenant.budget_max && prop.rent) {
+            const tenantMin = parseFloat(tenant.budget_min);
+            const tenantMax = parseFloat(tenant.budget_max);
+            const propRent = parseFloat(prop.rent);
+            const budgetRange = (tenantMax - tenantMin) * 0.2; // 20% range
+            if (propRent >= tenantMin - budgetRange && propRent <= tenantMax + budgetRange) {
+              matches++;
+            }
+          }
+          
+          // Match bedrooms
+          if (tenant.bedrooms && prop.bedrooms) {
+            if (tenant.bedrooms === prop.bedrooms) {
+              matches++;
+            }
+          }
+          
+          // Match amenities (if any amenity matches)
+          if (tenant.amenities && prop.amenities) {
+            const tenantAmenities = tenant.amenities.toLowerCase().split(',').map((a: string) => a.trim());
+            const propAmenities = prop.amenities.toLowerCase().split(',').map((a: string) => a.trim());
+            if (tenantAmenities.some((amenity: string) => propAmenities.includes(amenity))) {
+              matches++;
+            }
+          }
+          
+          // Return true if at least one match (relaxed matching)
+          return matches > 0;
+        });
+        
+        // Calculate match score (percentage of matching criteria)
+        const matchScore = matchingProperties.length > 0 
+          ? Math.min(0.9, 0.5 + (matchingProperties.length * 0.1))
+          : 0.3;
+        
+        // Get the best matching property
+        const bestMatch = matchingProperties[0] || null;
         
         return {
-          ...lead,
-          tenant: tenant ? {
+          lead_id: tenant.tenant_id || `lead_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          tenant_id: tenant.tenant_id,
+          property_id: bestMatch?.property_id || '',
+          property_code: bestMatch?.property_code || '',
+          channel: 'tenant_csv',
+          transcript: '',
+          call_recording_url: '',
+          match_score: matchScore.toString(),
+          status: status as string || 'new',
+          owner_notified: 'false',
+          created_at: tenant.created_at || new Date().toISOString(),
+          updated_at: tenant.updated_at || new Date().toISOString(),
+          tenant: {
             tenant_id: tenant.tenant_id,
             name: tenant.name,
             phone: tenant.phone,
-            city: tenant.city
+            whatsapp_number: tenant.whatsapp_number,
+            email: tenant.email,
+            city: tenant.city,
+            localities: tenant.localities,
+            budget_min: tenant.budget_min,
+            budget_max: tenant.budget_max,
+            bedrooms: tenant.bedrooms,
+            amenities: tenant.amenities
+          },
+          property: bestMatch ? {
+            property_id: bestMatch.property_id,
+            property_code: bestMatch.property_code,
+            title: bestMatch.title,
+            locality: bestMatch.locality,
+            rent: bestMatch.rent,
+            bedrooms: bestMatch.bedrooms,
+            area_sqft: bestMatch.area_sqft,
+            amenities: bestMatch.amenities
           } : null,
-          property: property ? {
-            property_id: property.property_id,
-            property_code: property.property_code,
-            title: property.title,
-            locality: property.locality,
-            rent: property.rent
-          } : null
+          matching_properties_count: matchingProperties.length
         };
       })
     );
     
+    // Filter by status if provided
+    let filteredLeads = leads;
+    if (status) {
+      filteredLeads = leads.filter((lead) => lead.status === status);
+    }
+    
+    // Sort by match score (highest first)
+    filteredLeads.sort((a, b) => parseFloat(b.match_score) - parseFloat(a.match_score));
+    
     res.json({ 
       status: 'success', 
-      leads: enrichedLeads,
-      count: enrichedLeads.length 
+      leads: filteredLeads,
+      count: filteredLeads.length 
     });
   } catch (error) {
     next(error);

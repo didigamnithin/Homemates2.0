@@ -15,27 +15,13 @@ export const authenticate = (
   res: Response,
   next: NextFunction
 ) => {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-
-    if (!token) {
-      throw createError('Authentication required', 401);
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
-      id: string;
-      email: string;
-      builderId: string;
-    };
-
-    req.user = decoded;
-    next();
-  } catch (error) {
-    if (error instanceof jwt.JsonWebTokenError) {
-      next(createError('Invalid token', 401));
-    } else {
-      next(error);
-    }
-  }
+  // Allow all requests - no authentication required
+  // Set a default user for compatibility
+  req.user = {
+    id: 'guest',
+    email: 'guest@homemates.com',
+    builderId: 'guest'
+  };
+  next();
 };
 

@@ -101,138 +101,176 @@ NEXT_PUBLIC_API_URL=https://your-backend-domain.com
 
 ## Backend Deployment
 
-### Option 1: Railway (Recommended)
+### Google Cloud Run (Recommended)
 
-1. **Install Railway CLI**:
-   ```bash
-   npm i -g @railway/cli
-   railway login
-   ```
+Google Cloud Run is a fully managed serverless platform that automatically scales your application.
 
-2. **Initialize Railway Project**:
-   ```bash
-   cd backend
-   railway init
-   ```
+#### Prerequisites
 
-3. **Set Environment Variables**:
-   ```bash
-   railway variables set PORT=3001
-   railway variables set NODE_ENV=production
-   railway variables set JWT_SECRET=your-secret-key
-   railway variables set PERPLEXITY_API_KEY=your-key
-   railway variables set FRONTEND_URL=https://homemates20-frontend-pqxt81fr2-nithins-projects-4472876c.vercel.app
-   ```
-
-4. **Deploy**:
-   ```bash
-   railway up
-   ```
-
-5. **Configure Build Settings**:
-   - Build Command: `npm run build`
-   - Start Command: `npm start`
-   - Root Directory: `backend`
-
-### Option 2: Heroku
-
-1. **Install Heroku CLI**:
+1. **Install Google Cloud SDK**:
    ```bash
    # macOS
-   brew tap heroku/brew && brew install heroku
+   brew install --cask google-cloud-sdk
    
-   # Or download from https://devcenter.heroku.com/articles/heroku-cli
+   # Or download from https://cloud.google.com/sdk/docs/install
    ```
 
-2. **Login and Create App**:
+2. **Login to Google Cloud**:
    ```bash
-   heroku login
+   gcloud auth login
+   gcloud config set project YOUR_PROJECT_ID
+   ```
+
+3. **Enable required APIs**:
+   ```bash
+   gcloud services enable cloudbuild.googleapis.com
+   gcloud services enable run.googleapis.com
+   gcloud services enable containerregistry.googleapis.com
+   ```
+
+#### Step 1: Build and Push Docker Image
+
+1. **Build the Docker image**:
+   ```bash
    cd backend
-   heroku create homemates-backend
+   gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/homemates-backend
    ```
 
-3. **Set Environment Variables**:
+   Or build locally first:
    ```bash
-   heroku config:set NODE_ENV=production
-   heroku config:set PORT=3001
-   heroku config:set JWT_SECRET=your-secret-key
-   heroku config:set PERPLEXITY_API_KEY=your-key
-   heroku config:set FRONTEND_URL=https://your-frontend-domain.com
+   docker build -t gcr.io/YOUR_PROJECT_ID/homemates-backend .
+   docker push gcr.io/YOUR_PROJECT_ID/homemates-backend
    ```
 
-4. **Configure Buildpacks**:
+#### Step 2: Deploy to Cloud Run
+
+1. **Deploy the service**:
    ```bash
-   heroku buildpacks:set heroku/nodejs
+   gcloud run deploy homemates-backend \
+     --image gcr.io/YOUR_PROJECT_ID/homemates-backend \
+     --platform managed \
+     --region us-central1 \
+     --allow-unauthenticated \
+     --port 8080 \
+     --memory 512Mi \
+     --cpu 1 \
+     --min-instances 0 \
+     --max-instances 10 \
+     --timeout 300 \
+     --set-env-vars "NODE_ENV=production,PORT=8080"
    ```
 
-5. **Deploy**:
+2. **Set Environment Variables**:
    ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   heroku git:remote -a homemates-backend
-   git push heroku main
+   gcloud run services update homemates-backend \
+     --update-env-vars "JWT_SECRET=your-secret-key,PERPLEXITY_API_KEY=your-key,RINGG_API_KEY=your-ringg-key,RINGG_AGENT_ID_OUTBOUND=7fbc224c-8efe-4a21-a01f-e6f5117f0672,FRONTEND_URL=https://your-frontend-domain.com" \
+     --region us-central1
    ```
 
-### Option 3: AWS EC2 / DigitalOcean
-
-1. **SSH into your server**:
+   Or set them individually:
    ```bash
-   ssh user@your-server-ip
+   gcloud run services update homemates-backend \
+     --set-env-vars "JWT_SECRET=your-secret-key" \
+     --region us-central1
+   
+   gcloud run services update homemates-backend \
+     --set-env-vars "PERPLEXITY_API_KEY=your-key" \
+     --region us-central1
+   
+   gcloud run services update homemates-backend \
+     --set-env-vars "RINGG_API_KEY=your-ringg-key" \
+     --region us-central1
+   
+   gcloud run services update homemates-backend \
+     --set-env-vars "FRONTEND_URL=https://your-frontend-domain.com" \
+     --region us-central1
    ```
 
-2. **Install Node.js**:
+#### Step 3: Configure Service
+
+1. **Get the service URL**:
    ```bash
-   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-   sudo apt-get install -y nodejs
+   gcloud run services describe homemates-backend \
+     --region us-central1 \
+     --format 'value(status.url)'
    ```
 
-3. **Clone Repository**:
+2. **Update CORS settings** (if needed):
+   - The backend already allows all origins (`origin: '*'`)
+   - If you need to restrict, update `backend/src/index.ts`
+
+#### Step 4: Deploy Database Files
+
+Since Cloud Run is stateless, you have two options:
+
+**Option A: Include in Docker Image** (for small files):
+```dockerfile
+# Already included in Dockerfile
+COPY database/ ./database/
+```
+
+**Option B: Use Cloud Storage** (recommended for production):
+1. Upload to Cloud Storage:
    ```bash
-   git clone https://github.com/your-username/homemates2.0.git
-   cd homemates2.0/backend
+   gsutil cp backend/database/*.csv gs://YOUR_BUCKET_NAME/database/
    ```
 
-4. **Install Dependencies**:
+2. Update backend to read from Cloud Storage (requires code changes)
+
+#### Step 5: Continuous Deployment (Optional)
+
+1. **Set up Cloud Build trigger**:
    ```bash
-   npm install
+   gcloud builds triggers create github \
+     --repo-name=homemates2.0 \
+     --repo-owner=YOUR_GITHUB_USERNAME \
+     --branch-pattern="^main$" \
+     --build-config=backend/cloudbuild.yaml
    ```
 
-5. **Build**:
-   ```bash
-   npm run build
+2. **Create `backend/cloudbuild.yaml`**:
+   ```yaml
+   steps:
+     - name: 'gcr.io/cloud-builders/docker'
+       args: ['build', '-t', 'gcr.io/$PROJECT_ID/homemates-backend', '.']
+     - name: 'gcr.io/cloud-builders/docker'
+       args: ['push', 'gcr.io/$PROJECT_ID/homemates-backend']
+     - name: 'gcr.io/cloud-builders/gcloud'
+       args:
+         - 'run'
+         - 'deploy'
+         - 'homemates-backend'
+         - '--image'
+         - 'gcr.io/$PROJECT_ID/homemates-backend'
+         - '--region'
+         - 'us-central1'
+         - '--platform'
+         - 'managed'
    ```
 
-6. **Set Environment Variables**:
-   ```bash
-   nano .env
-   # Add all environment variables
-   ```
+#### Useful Commands
 
-7. **Use PM2 for Process Management**:
-   ```bash
-   npm install -g pm2
-   pm2 start dist/index.js --name homemates-backend
-   pm2 save
-   pm2 startup
-   ```
+```bash
+# View logs
+gcloud run services logs read homemates-backend --region us-central1
 
-8. **Configure Nginx** (optional):
-   ```nginx
-   server {
-       listen 80;
-       server_name your-backend-domain.com;
+# Update service
+gcloud run services update homemates-backend --region us-central1
 
-       location / {
-           proxy_pass http://localhost:3001;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection 'upgrade';
-           proxy_set_header Host $host;
-           proxy_cache_bypass $http_upgrade;
-       }
-   }
-   ```
+# Delete service
+gcloud run services delete homemates-backend --region us-central1
+
+# List services
+gcloud run services list --region us-central1
+```
+
+#### Important Notes
+
+- **Port**: Cloud Run requires the app to listen on the port specified by the `PORT` environment variable (default: 8080)
+- **Stateless**: Cloud Run instances are stateless. Use Cloud Storage or a database for persistent data
+- **Cold Starts**: First request may be slower. Set `--min-instances 1` to avoid cold starts
+- **Timeout**: Default timeout is 300 seconds. Increase if needed with `--timeout`
+- **Memory**: Adjust `--memory` based on your needs (128Mi, 256Mi, 512Mi, 1Gi, 2Gi, 4Gi, 8Gi)
 
 ---
 
@@ -258,7 +296,8 @@ NEXT_PUBLIC_API_URL=https://your-backend-domain.com
 
 4. **Set Environment Variables**:
    - Go to Vercel Dashboard → Your Project → Settings → Environment Variables
-   - Add: `NEXT_PUBLIC_API_URL=https://your-backend-domain.com`
+   - Add: `NEXT_PUBLIC_API_URL=https://homemates-backend-87009357635.us-central1.run.app`
+   - **Important:** Replace with your actual Cloud Run backend URL if different
 
 5. **Configure Build Settings**:
    - Root Directory: `frontend`
@@ -395,15 +434,25 @@ git push
 
 ⚠️ **Warning**: This exposes your data in version control. Only use for development.
 
-#### Option 2: Use Cloud Storage (Recommended)
+#### Option 2: Use Cloud Storage (Recommended for Cloud Run)
 
-1. **AWS S3 / DigitalOcean Spaces**:
-   - Upload CSV files to S3 bucket
-   - Update backend to read from S3
+1. **Google Cloud Storage**:
+   ```bash
+   # Create bucket
+   gsutil mb gs://YOUR_BUCKET_NAME
+   
+   # Upload CSV files
+   gsutil cp backend/database/*.csv gs://YOUR_BUCKET_NAME/database/
+   gsutil cp backend/data/*.csv gs://YOUR_BUCKET_NAME/data/
+   gsutil cp backend/data/*.json gs://YOUR_BUCKET_NAME/data/
+   ```
+   
+   - Update backend to read from Cloud Storage
    - Use environment variables for bucket name
+   - Grant Cloud Run service account access to bucket
 
 2. **Database Service**:
-   - Migrate to PostgreSQL/MySQL
+   - Migrate to Cloud SQL (PostgreSQL/MySQL)
    - Use CSV import scripts for initial data
 
 #### Option 3: Manual Upload After Deployment
@@ -460,35 +509,11 @@ echo ".env.local" >> .gitignore
 
 ## Platform-Specific Guides
 
-### Railway (Full Stack)
+### Google Cloud Run + Vercel (Recommended)
 
-1. **Create Two Services**:
-   - Service 1: Backend
-   - Service 2: Frontend
-
-2. **Backend Service**:
-   ```bash
-   cd backend
-   railway init
-   railway variables set PORT=3001
-   railway variables set NODE_ENV=production
-   # ... set other variables
-   railway up
-   ```
-
-3. **Frontend Service**:
-   ```bash
-   cd frontend
-   railway init
-   railway variables set NEXT_PUBLIC_API_URL=${{Backend.RAILWAY_PUBLIC_DOMAIN}}
-   railway up
-   ```
-
-### Vercel + Railway
-
-1. **Deploy Backend to Railway**
+1. **Deploy Backend to Google Cloud Run** (see Backend Deployment section above)
 2. **Deploy Frontend to Vercel**:
-   - Set `NEXT_PUBLIC_API_URL` to Railway backend URL
+   - Set `NEXT_PUBLIC_API_URL` to your Cloud Run service URL
    - Connect GitHub repository
    - Auto-deploy on push
 
@@ -725,9 +750,61 @@ For issues or questions:
 
 - [Next.js Deployment Docs](https://nextjs.org/docs/deployment)
 - [Express.js Production Best Practices](https://expressjs.com/en/advanced/best-practice-production.html)
-- [Railway Documentation](https://docs.railway.app/)
+- [Google Cloud Run Documentation](https://cloud.google.com/run/docs)
+- [Google Cloud Run Quickstart](https://cloud.google.com/run/docs/quickstarts/build-and-deploy)
 - [Vercel Documentation](https://vercel.com/docs)
-- [Heroku Node.js Guide](https://devcenter.heroku.com/articles/getting-started-with-nodejs)
+- [Docker Documentation](https://docs.docker.com/)
+
+---
+
+## Quick Deployment Script
+
+A complete deployment script is available at the root: `deploy-all.sh`
+
+This script will:
+1. Push changes to all three GitHub repositories (root, frontend, backend)
+2. Deploy backend to Google Cloud Run
+3. Deploy frontend to Vercel
+
+### Usage
+
+```bash
+# Make script executable (first time only)
+chmod +x deploy-all.sh
+
+# Run deployment
+./deploy-all.sh
+```
+
+### What it does
+
+1. **GitHub Push**:
+   - Root: `https://github.com/didigamnithin/Homemates2.0.git`
+   - Frontend: `https://github.com/didigamnithin/Homemates2.0-frontend.git`
+   - Backend: `https://github.com/didigamnithin/Homemates2.0-Backend.git`
+
+2. **Backend Deployment**:
+   - Builds Docker image
+   - Pushes to Google Container Registry
+   - Deploys to Google Cloud Run
+
+3. **Frontend Deployment**:
+   - Deploys to Vercel (production)
+
+### Prerequisites
+
+- Git configured with access to the repositories
+- Google Cloud SDK installed and authenticated
+- Vercel CLI installed (`npm install -g vercel`)
+- Vercel project linked (run `vercel link` in frontend directory if needed)
+
+### Configuration
+
+Edit `deploy-all.sh` to customize:
+- Repository URLs
+- Google Cloud project ID
+- Service name and region
+- Deployment settings
 
 ---
 

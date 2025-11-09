@@ -1,11 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/store/auth'
 import { Sidebar } from '@/components/layout/Sidebar'
-import TenantOnboarding from '@/components/onboarding/TenantOnboarding'
-import { apiClient } from '@/lib/api/client'
 
 export default function DashboardLayout({
   children,
@@ -13,51 +11,22 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const pathname = usePathname()
-  const { user, isLoading, checkAuth, userType } = useAuthStore()
+  const { isLoading, userType, setUserType } = useAuthStore()
   const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(true)
-  const [needsOnboarding, setNeedsOnboarding] = useState(false)
 
   useEffect(() => {
-    checkAuth()
-  }, [])
-
-  useEffect(() => {
-    if (!isLoading && !user) {
+    // Check if userType is set, if not redirect to login
+    const storedUserType = localStorage.getItem('userType') as 'tenant' | 'owner' | null
+    if (!storedUserType) {
       router.push('/login')
-    }
-  }, [user, isLoading, router])
-
-  // Check if tenant needs onboarding
-  useEffect(() => {
-    const checkOnboarding = async () => {
-      if (isLoading || !user || userType !== 'tenant') {
-        setIsCheckingOnboarding(false)
-        return
-      }
-
-      try {
-        const response = await apiClient.get(`/tenants/phone/${(user as any).phone || user.email || ''}`)
-        const tenant = response.data.tenant
-
-        // If tenant doesn't exist or doesn't have required fields, show onboarding
-        if (!tenant || !tenant.bedrooms || !tenant.budget_min || !tenant.localities) {
-          setNeedsOnboarding(true)
-        }
-      } catch (error) {
-        // If tenant not found, show onboarding
-        setNeedsOnboarding(true)
-      } finally {
-        setIsCheckingOnboarding(false)
-      }
-    }
-
-    if (user && userType === 'tenant' && pathname !== '/dashboard/properties') {
-      checkOnboarding()
     } else {
+      // Set userType in store if not already set
+      if (!userType) {
+        setUserType(storedUserType)
+      }
       setIsCheckingOnboarding(false)
     }
-  }, [user, userType, isLoading, pathname])
+  }, [userType, router, setUserType])
 
   if (isLoading || isCheckingOnboarding) {
     return (
@@ -67,27 +36,11 @@ export default function DashboardLayout({
     )
   }
 
-  if (!user) {
+  if (!userType) {
     return null
   }
 
-  // Show onboarding for tenants if needed
-  if (needsOnboarding && userType === 'tenant' && pathname !== '/dashboard/properties') {
-    return (
-      <div className="flex h-screen">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto bg-background">
-          <TenantOnboarding
-            phoneNumber={(user as any).phone || user.email || ''}
-            onComplete={() => {
-              setNeedsOnboarding(false)
-              router.push('/dashboard/properties')
-            }}
-          />
-        </main>
-      </div>
-    )
-  }
+  // Skip onboarding for now - allow direct access
 
   return (
     <div className="flex h-screen lg:flex-row flex-col">

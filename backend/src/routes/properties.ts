@@ -61,14 +61,23 @@ const upload = multer({
 // Get all properties
 propertiesRouter.get('/', async (req: AuthRequest, res, next) => {
   try {
-    const { city, status, owner_id } = req.query;
+    const { city, status, owner_id, limit } = req.query;
     
     const filters: any = {};
     if (city) filters.city = city as string;
     if (status) filters.status = status as string;
     if (owner_id) filters.owner_id = owner_id as string;
 
-    const properties = await csvStorage.getProperties(filters);
+    let properties = await csvStorage.getProperties(filters);
+    
+    // Limit to 5 properties for owners
+    if (limit) {
+      const limitNum = parseInt(limit as string, 10);
+      properties = properties.slice(0, limitNum);
+    } else if (owner_id) {
+      // Default limit of 5 for owners
+      properties = properties.slice(0, 5);
+    }
     
     res.json({ 
       status: 'success', 
@@ -271,7 +280,7 @@ propertiesRouter.post('/upload', upload.single('file'), async (req: AuthRequest,
     let properties: any[] = [];
 
     if (use_database_file === 'true') {
-      // Read from database/flats.csv
+      // Read from backend/database/flats.csv
       const databaseFlatsPath = path.join(process.cwd(), 'database', 'flats.csv');
       
       if (!fs.existsSync(databaseFlatsPath)) {
@@ -377,7 +386,7 @@ propertiesRouter.post('/upload', upload.single('file'), async (req: AuthRequest,
   }
 });
 
-// Import from database/flats.csv
+// Import from backend/database/flats.csv
 propertiesRouter.post('/import-database', async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;

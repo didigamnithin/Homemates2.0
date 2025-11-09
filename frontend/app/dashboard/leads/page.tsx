@@ -26,11 +26,19 @@ interface Lead {
   call_recording_url: string
   match_score: string
   status: string
+  matching_properties_count?: number
   tenant?: {
     tenant_id: string
     name: string
     phone: string
+    whatsapp_number?: string
+    email?: string
     city: string
+    localities?: string
+    budget_min?: string
+    budget_max?: string
+    bedrooms?: string
+    amenities?: string
   }
   property?: {
     property_id: string
@@ -38,6 +46,9 @@ interface Lead {
     title: string
     locality: string
     rent: string
+    bedrooms?: string
+    area_sqft?: string
+    amenities?: string
   }
   created_at: string
   updated_at: string
@@ -65,28 +76,9 @@ export default function LeadsPage() {
       const params = new URLSearchParams()
       if (filters.status) params.append('status', filters.status)
 
-      // Get owner's properties first to filter leads
-      const propertiesResponse = await apiClient.get('/properties')
-      const ownerProperties = propertiesResponse.data.properties || []
-      const propertyIds = ownerProperties.map((p: any) => p.property_id)
-
+      // Get leads (tenants.csv as leads with matching)
       const response = await apiClient.get(`/leads?${params.toString()}`)
       let filteredLeads = response.data.leads || []
-
-      // Relaxed matching - show leads even if only 1 property matches
-      // If owner has properties, show leads matching those properties
-      // Otherwise, show all leads
-      if (propertyIds.length > 0) {
-        // Show leads that match owner's properties OR if no property_id specified
-        filteredLeads = filteredLeads.filter((lead: Lead) => 
-          !lead.property_id || propertyIds.includes(lead.property_id)
-        )
-        
-        // If no matching leads, show all leads anyway
-        if (filteredLeads.length === 0) {
-          filteredLeads = response.data.leads || []
-        }
-      }
 
       // Apply search filter
       if (filters.search) {
@@ -95,7 +87,8 @@ export default function LeadsPage() {
           lead.tenant?.name?.toLowerCase().includes(searchLower) ||
           lead.tenant?.phone?.includes(searchLower) ||
           lead.property_code?.toLowerCase().includes(searchLower) ||
-          lead.property?.title?.toLowerCase().includes(searchLower)
+          lead.property?.title?.toLowerCase().includes(searchLower) ||
+          lead.tenant?.localities?.toLowerCase().includes(searchLower)
         )
       }
 
@@ -130,6 +123,10 @@ export default function LeadsPage() {
   }
 
   const handleCall = (lead: Lead) => {
+    if (!lead.tenant?.phone) {
+      alert('Phone number not available for this lead')
+      return
+    }
     setSelectedTenant(lead)
     setShowAgent(true)
   }
@@ -158,6 +155,17 @@ export default function LeadsPage() {
           <OutboundAgentDynamic 
             calleeName={selectedTenant.tenant?.name || 'Tenant'}
             tenantId={selectedTenant.tenant_id}
+            mobileNumber={selectedTenant.tenant?.phone}
+            onCallInitiated={(callId) => {
+              console.log('Call initiated:', callId)
+              setShowAgent(false)
+              alert('Call initiated successfully!')
+            }}
+            onError={(error) => {
+              console.error('Call error:', error)
+              alert(`Failed to initiate call: ${error}`)
+              setShowAgent(false)
+            }}
           />
         )}
 
@@ -257,19 +265,44 @@ export default function LeadsPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <p className="text-sm font-semibold mb-1">{lead.property?.title || 'N/A'}</p>
-                    <p className="text-xs text-muted-foreground">Code: {lead.property_code || 'N/A'}</p>
-                    {lead.property?.locality && (
-                      <p className="text-xs text-muted-foreground mt-1">{lead.property.locality}</p>
-                    )}
-                    {lead.property?.rent && (
-                      <p className="text-sm font-bold text-homie-blue mt-1">₹{lead.property.rent}</p>
+                    {lead.property ? (
+                      <>
+                        <p className="text-sm font-semibold mb-1">{lead.property.title || 'N/A'}</p>
+                        <p className="text-xs text-muted-foreground">Code: {lead.property_code || 'N/A'}</p>
+                        {lead.property.locality && (
+                          <p className="text-xs text-muted-foreground mt-1">{lead.property.locality}</p>
+                        )}
+                        {lead.property.rent && (
+                          <p className="text-sm font-bold text-homie-blue mt-1">₹{lead.property.rent}</p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-semibold mb-1 text-gray-500">No matching property</p>
+                        <p className="text-xs text-muted-foreground">
+                          {lead.tenant?.localities && `Looking in: ${lead.tenant.localities}`}
+                        </p>
+                        {lead.tenant?.budget_min && lead.tenant?.budget_max && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Budget: ₹{lead.tenant.budget_min} - ₹{lead.tenant.budget_max}
+                          </p>
+                        )}
+                        {lead.tenant?.bedrooms && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {lead.tenant.bedrooms} BHK
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t">
                     <div>
-                      <p className="text-xs text-muted-foreground mb-1">Match Score</p>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        {lead.matching_properties_count !== undefined 
+                          ? `${lead.matching_properties_count} matching properties`
+                          : 'Match Score'}
+                      </p>
                       <div className="flex items-center gap-2">
                         <div className="w-20 h-2 rounded-full bg-gray-200 overflow-hidden">
                           <div 

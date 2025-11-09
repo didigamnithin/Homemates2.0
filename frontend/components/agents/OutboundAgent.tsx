@@ -1,72 +1,90 @@
 /**
  * Outbound Agent Component
- * Loads the DesiVocal outbound agent for owner to tenant calls
+ * Initiates outbound calls using Ringg AI API via backend
  */
 
 'use client'
 
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import { apiClient } from '@/lib/api/client'
 
 interface OutboundAgentProps {
   calleeName?: string
   tenantId?: string
+  mobileNumber?: string
+  onCallInitiated?: (callId: string) => void
+  onError?: (error: string) => void
 }
 
-export default function OutboundAgent({ calleeName, tenantId }: OutboundAgentProps) {
+export default function OutboundAgent({ 
+  calleeName, 
+  tenantId, 
+  mobileNumber,
+  onCallInitiated,
+  onError 
+}: OutboundAgentProps) {
+  const [isCalling, setIsCalling] = useState(false)
+  const [callStatus, setCallStatus] = useState<string | null>(null)
+
   useEffect(() => {
-    // Load the agent CDN
-    function loadAgentsCdn(version: string, callback: () => void) {
-      const link = document.createElement('link')
-      link.rel = 'stylesheet'
-      link.type = 'text/css'
-      link.href = `https://cdn.jsdelivr.net/npm/@desivocal/agents-cdn@${version}/dist/style.css`
-      
-      const script = document.createElement('script')
-      script.type = 'text/javascript'
-      
-      // Legacy IE support (readyState and onreadystatechange are not in TypeScript definitions)
-      if ((script as any).readyState) {
-        (script as any).onreadystatechange = function() {
-          if ((script as any).readyState !== 'loaded' && (script as any).readyState !== 'complete') return
-          ;(script as any).onreadystatechange = null
-          callback()
-        }
-      } else {
-        script.onload = function() {
-          callback()
-        }
-      }
-      
-      script.src = `https://cdn.jsdelivr.net/npm/@desivocal/agents-cdn@${version}/dist/dv-agent.es.js`
-      document.getElementsByTagName('head')[0].appendChild(link)
-      document.getElementsByTagName('head')[0].appendChild(script)
+    // Auto-initiate call when component mounts if we have required data
+    if (calleeName && mobileNumber && !isCalling) {
+      initiateCall()
+    }
+  }, [calleeName, mobileNumber])
+
+  const initiateCall = async () => {
+    if (!calleeName || !mobileNumber) {
+      onError?.('Name and mobile number are required')
+      return
     }
 
-    // Load and initialize the outbound agent
-    loadAgentsCdn('1.0.3', function() {
-      // @ts-ignore - loadAgent is loaded from CDN
-      if (typeof loadAgent !== 'undefined') {
-        // @ts-ignore
-        loadAgent({
-          agentId: '7fbc224c-8efe-4a21-a01f-e6f5117f0672',
-          xApiKey: 'eb1f8fa4-f149-4f40-9ca2-323037e80311',
-          variables: {
-            ...(calleeName && { callee_name: calleeName })
-          }
-        })
-      }
-    })
+    try {
+      setIsCalling(true)
+      setCallStatus('Initiating call...')
 
-    // Cleanup function
-    return () => {
-      // Remove agent if needed
-      const agentElement = document.getElementById('dv-agent-container')
-      if (agentElement) {
-        agentElement.remove()
+      const response = await apiClient.post('/calls/outbound', {
+        name: calleeName,
+        mobile_number: mobileNumber,
+        custom_args_values: {
+          ...(calleeName && { callee_name: calleeName }),
+          ...(tenantId && { tenant_id: tenantId })
+        }
+      })
+
+      if (response.data.call) {
+        setCallStatus('Call initiated successfully')
+        onCallInitiated?.(response.data.call['Unique Call ID'])
       }
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to initiate call'
+      setCallStatus(`Error: ${errorMessage}`)
+      onError?.(errorMessage)
+    } finally {
+      setIsCalling(false)
     }
-  }, [calleeName, tenantId])
+  }
 
-  return null // This component doesn't render anything visible
+  // Show call status if available
+  if (callStatus) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+          <h3 className="text-lg font-semibold mb-2">Call Status</h3>
+          <p className="text-sm text-gray-600 mb-4">{callStatus}</p>
+          {!isCalling && (
+            <button
+              onClick={() => setCallStatus(null)}
+              className="w-full px-4 py-2 bg-homie-blue text-white rounded-lg hover:bg-homie-blue-dark transition-colors"
+            >
+              Close
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return null
 }
 

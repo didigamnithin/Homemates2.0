@@ -76,7 +76,7 @@ tenantsRouter.post('/', async (req: AuthRequest, res, next) => {
 
     const tenant = await csvStorage.createTenant(tenantData);
     
-    // Also append to database/tenants.csv
+    // Also append to backend/database/tenants.csv
     try {
       const fs = require('fs');
       const path = require('path');

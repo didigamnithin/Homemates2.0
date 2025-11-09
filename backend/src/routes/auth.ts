@@ -71,51 +71,68 @@ authRouter.post('/login', async (req, res, next) => {
       throw createError('Phone number is required', 400);
     }
 
+    // Normalize phone number (remove spaces, +, -, parentheses, and leading 0)
+    let normalizedPhone = phone_number.replace(/[\s\+\-\(\)]/g, '');
+    // Remove leading 0 if present (e.g., 07095288950 -> 7095288950)
+    if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = normalizedPhone.substring(1);
+    }
+    
     // Default password is 1234
     const loginPassword = password || '1234';
     const loginUserType = user_type || 'tenant';
-
-    // Normalize phone number (remove spaces, +, etc.)
-    const normalizedPhone = phone_number.replace(/[\s\+\-\(\)]/g, '');
+    
+    // Also try with original phone number for matching
+    const originalPhone = phone_number.replace(/[\s\+\-\(\)]/g, '');
 
     // Try to find user by phone number
     let user = fileStorage.getUsers().find((u: any) => {
-      const userPhone = (u.phone || u.email || '').replace(/[\s\+\-\(\)]/g, '');
-      return userPhone === normalizedPhone || userPhone === phone_number;
+      let userPhone = (u.phone || u.email || '').replace(/[\s\+\-\(\)]/g, '');
+      // Remove leading 0 if present
+      if (userPhone.startsWith('0')) {
+        userPhone = userPhone.substring(1);
+      }
+      return userPhone === normalizedPhone || userPhone === originalPhone || userPhone === phone_number;
     });
 
     // If user doesn't exist, create one with default password
     if (!user) {
       // Check if it's a tenant or owner
       if (loginUserType === 'tenant') {
-        // Check if tenant exists in CSV
-        const tenant = await csvStorage.getTenantByPhone(phone_number);
+        // Check if tenant exists in CSV - try both normalized and original phone
+        let tenant = await csvStorage.getTenantByPhone(normalizedPhone);
+        if (!tenant) {
+          tenant = await csvStorage.getTenantByPhone(originalPhone);
+        }
+        if (!tenant) {
+          tenant = await csvStorage.getTenantByPhone(phone_number);
+        }
         if (tenant) {
           // Create user from tenant
           user = await fileStorage.createUser({
-            email: phone_number + '@homemates.com',
+            email: normalizedPhone + '@homemates.com',
             password: loginPassword,
             name: tenant.name || 'Tenant',
-            phone: phone_number,
+            phone: normalizedPhone,
             user_type: 'tenant'
           });
         } else {
           // Create new tenant user
           user = await fileStorage.createUser({
-            email: phone_number + '@homemates.com',
+            email: normalizedPhone + '@homemates.com',
             password: loginPassword,
             name: 'Tenant',
-            phone: phone_number,
+            phone: normalizedPhone,
             user_type: 'tenant'
           });
         }
       } else {
         // Create owner user
         user = await fileStorage.createUser({
-          email: phone_number + '@homemates.com',
+          email: normalizedPhone + '@homemates.com',
           password: loginPassword,
           name: 'Owner',
-          phone: phone_number,
+          phone: normalizedPhone,
           user_type: 'owner'
         });
       }
@@ -152,7 +169,7 @@ authRouter.post('/login', async (req, res, next) => {
       {
         id: user.id,
         email: user.email,
-        phone: user.phone || phone_number,
+        phone: user.phone || normalizedPhone,
         builderId: user.id,
         user_type: user.user_type || loginUserType
       },
@@ -166,7 +183,7 @@ authRouter.post('/login', async (req, res, next) => {
       user: {
         id: user.id,
         email: user.email,
-        phone: user.phone || phone_number,
+        phone: user.phone || normalizedPhone,
         name: user.name,
         company_name: user.company_name,
         user_type: user.user_type || loginUserType

@@ -3,8 +3,8 @@ import path from 'path';
 import csv from 'csv-parser';
 import { createObjectCsvWriter } from 'csv-writer';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const PROPERTIES_CSV = path.join(DATA_DIR, 'properties.csv');
+const DATA_DIR = path.join(process.cwd(), 'database');
+const PROPERTIES_CSV = path.join(DATA_DIR, 'flats.csv');
 const TENANTS_CSV = path.join(DATA_DIR, 'tenants.csv');
 const LEADS_CSV = path.join(DATA_DIR, 'leads.csv');
 
@@ -78,11 +78,78 @@ async function appendCSV<T extends Record<string, any>>(filePath: string, data: 
   await writeCSV(filePath, existing, headers);
 }
 
+// Helper function to map flats.csv format to property structure
+function mapFlatsToProperty(data: any): any {
+  // Handle both formats: new format (property_code, title, etc.) and old format (Name, Mobile, etc.)
+  if (data.property_code || data.property_id) {
+    // Already in new format
+    return data;
+  }
+  
+  // Map from old format (Name, Mobile, Locality, Budget, BHKtype, Amenities, SFT)
+  return {
+    property_id: data.property_id || `prop_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    property_code: data.property_code || data['Code'] || `PROP_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    title: data.title || data['Name'] || '',
+    address: data.address || '',
+    city: data.city || 'Hyderabad',
+    locality: data.locality || data['Locality'] || '',
+    rent: data.rent || data['Budget'] || data['Price'] || '',
+    available_from: data.available_from || new Date().toISOString().split('T')[0],
+    bedrooms: data.bedrooms || data['BHKtype']?.replace(' BHK', '')?.replace('BHK', '') || '',
+    bathrooms: data.bathrooms || '',
+    area_sqft: data.area_sqft || data['SFT'] || '',
+    amenities: data.amenities || data['Amenities'] || '',
+    furnishing: data.furnishing || '',
+    status: data.status || 'available',
+    owner_id: data.owner_id || '',
+    owner_name: data.owner_name || '',
+    owner_phone: data.owner_phone || data['Mobile'] || '',
+    description: data.description || '',
+    photos: data.photos || '',
+    created_at: data.created_at || new Date().toISOString(),
+    updated_at: data.updated_at || new Date().toISOString()
+  };
+}
+
+// Helper function to map tenants.csv format to tenant structure
+function mapTenantsToTenant(data: any): any {
+  // Handle both formats: new format (tenant_id, name, etc.) and old format (Name, Mobile, etc.)
+  if (data.tenant_id) {
+    // Already in new format
+    return data;
+  }
+  
+  // Map from old format (Name, Mobile, Locality, Budget, BHKtype, Must Need amenities, Others)
+  return {
+    tenant_id: data.tenant_id || `tenant_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: data.name || data['Name'] || '',
+    phone: data.phone || data['Mobile'] || '',
+    whatsapp_number: data.whatsapp_number || data.phone || data['Mobile'] || '',
+    email: data.email || '',
+    city: data.city || 'Hyderabad',
+    localities: data.localities || data['Locality'] || '',
+    budget_min: data.budget_min || data['Budget']?.split('-')[0]?.trim() || '',
+    budget_max: data.budget_max || data['Budget']?.split('-')[1]?.trim() || data['Budget'] || '',
+    move_in_date: data.move_in_date || '',
+    bedrooms: data.bedrooms || data['BHKtype']?.replace(' BHK', '')?.replace('BHK', '') || '',
+    amenities: data.amenities || data['Must Need amenities'] || '',
+    preferences: data.preferences || data['Others'] || '',
+    source: data.source || 'call',
+    consent_timestamp: data.consent_timestamp || new Date().toISOString(),
+    consent_scope: data.consent_scope || 'contact',
+    created_at: data.created_at || new Date().toISOString(),
+    updated_at: data.updated_at || new Date().toISOString()
+  };
+}
+
 export const csvStorage = {
   // Properties
   async getProperties(filters?: { owner_id?: string; city?: string; status?: string }): Promise<any[]> {
     const properties = await readCSV<any>(PROPERTIES_CSV);
-    let filtered = properties;
+    // Map to standard format
+    const mappedProperties = properties.map(mapFlatsToProperty);
+    let filtered = mappedProperties;
     
     if (filters?.owner_id) {
       filtered = filtered.filter(p => p.owner_id === filters.owner_id);
@@ -99,16 +166,20 @@ export const csvStorage = {
 
   async getPropertyById(propertyId: string): Promise<any | null> {
     const properties = await readCSV<any>(PROPERTIES_CSV);
-    return properties.find(p => p.property_id === propertyId) || null;
+    const mappedProperties = properties.map(mapFlatsToProperty);
+    return mappedProperties.find(p => p.property_id === propertyId) || null;
   },
 
   async getPropertyByCode(propertyCode: string): Promise<any | null> {
     const properties = await readCSV<any>(PROPERTIES_CSV);
-    return properties.find(p => p.property_code?.toLowerCase() === propertyCode?.toLowerCase()) || null;
+    const mappedProperties = properties.map(mapFlatsToProperty);
+    return mappedProperties.find(p => p.property_code?.toLowerCase() === propertyCode?.toLowerCase()) || null;
   },
 
   async createProperty(propertyData: any): Promise<any> {
     const properties = await readCSV<any>(PROPERTIES_CSV);
+    // Map existing properties to standard format
+    const mappedProperties = properties.map(mapFlatsToProperty);
     const propertyId = propertyData.property_id || `prop_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     const newProperty = {
@@ -135,8 +206,8 @@ export const csvStorage = {
       updated_at: new Date().toISOString()
     };
 
-    properties.push(newProperty);
-    await writeCSV(PROPERTIES_CSV, properties, [
+    mappedProperties.push(newProperty);
+    await writeCSV(PROPERTIES_CSV, mappedProperties, [
       'property_id', 'property_code', 'title', 'address', 'city', 'locality', 
       'rent', 'available_from', 'bedrooms', 'bathrooms', 'area_sqft', 
       'amenities', 'furnishing', 'status', 'owner_id', 'owner_name', 
@@ -148,16 +219,18 @@ export const csvStorage = {
 
   async updateProperty(propertyId: string, updates: any): Promise<any | null> {
     const properties = await readCSV<any>(PROPERTIES_CSV);
-    const index = properties.findIndex(p => p.property_id === propertyId);
+    // Map existing properties to standard format
+    const mappedProperties = properties.map(mapFlatsToProperty);
+    const index = mappedProperties.findIndex(p => p.property_id === propertyId);
     if (index === -1) return null;
     
-    properties[index] = {
-      ...properties[index],
+    mappedProperties[index] = {
+      ...mappedProperties[index],
       ...updates,
       updated_at: new Date().toISOString()
     };
     
-    await writeCSV(PROPERTIES_CSV, properties, [
+    await writeCSV(PROPERTIES_CSV, mappedProperties, [
       'property_id', 'property_code', 'title', 'address', 'city', 'locality', 
       'rent', 'available_from', 'bedrooms', 'bathrooms', 'area_sqft', 
       'amenities', 'furnishing', 'status', 'owner_id', 'owner_name', 
@@ -169,7 +242,9 @@ export const csvStorage = {
 
   async deleteProperty(propertyId: string): Promise<boolean> {
     const properties = await readCSV<any>(PROPERTIES_CSV);
-    const filtered = properties.filter(p => p.property_id !== propertyId);
+    // Map existing properties to standard format
+    const mappedProperties = properties.map(mapFlatsToProperty);
+    const filtered = mappedProperties.filter(p => p.property_id !== propertyId);
     await writeCSV(PROPERTIES_CSV, filtered, [
       'property_id', 'property_code', 'title', 'address', 'city', 'locality', 
       'rent', 'available_from', 'bedrooms', 'bathrooms', 'area_sqft', 
@@ -182,10 +257,17 @@ export const csvStorage = {
   // Tenants
   async getTenants(filters?: { phone?: string; city?: string }): Promise<any[]> {
     const tenants = await readCSV<any>(TENANTS_CSV);
-    let filtered = tenants;
+    // Map to standard format
+    const mappedTenants = tenants.map(mapTenantsToTenant);
+    let filtered = mappedTenants;
     
     if (filters?.phone) {
-      filtered = filtered.filter(t => t.phone === filters.phone || t.whatsapp_number === filters.phone);
+      filtered = filtered.filter(t => {
+        const tPhone = (t.phone || '').replace(/[\s\+\-\(\)]/g, '');
+        const tWhatsapp = (t.whatsapp_number || '').replace(/[\s\+\-\(\)]/g, '');
+        const filterPhone = filters.phone!.replace(/[\s\+\-\(\)]/g, '');
+        return tPhone === filterPhone || tWhatsapp === filterPhone;
+      });
     }
     if (filters?.city) {
       filtered = filtered.filter(t => t.city?.toLowerCase() === filters.city?.toLowerCase());
@@ -196,16 +278,36 @@ export const csvStorage = {
 
   async getTenantById(tenantId: string): Promise<any | null> {
     const tenants = await readCSV<any>(TENANTS_CSV);
-    return tenants.find(t => t.tenant_id === tenantId) || null;
+    const mappedTenants = tenants.map(mapTenantsToTenant);
+    return mappedTenants.find(t => t.tenant_id === tenantId) || null;
   },
 
   async getTenantByPhone(phone: string): Promise<any | null> {
     const tenants = await readCSV<any>(TENANTS_CSV);
-    return tenants.find(t => t.phone === phone || t.whatsapp_number === phone) || null;
+    const mappedTenants = tenants.map(mapTenantsToTenant);
+    let normalizedPhone = phone.replace(/[\s\+\-\(\)]/g, '');
+    // Remove leading 0 if present (e.g., 07095288950 -> 7095288950)
+    if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = normalizedPhone.substring(1);
+    }
+    return mappedTenants.find(t => {
+      let tPhone = (t.phone || '').replace(/[\s\+\-\(\)]/g, '');
+      let tWhatsapp = (t.whatsapp_number || '').replace(/[\s\+\-\(\)]/g, '');
+      // Remove leading 0 if present
+      if (tPhone.startsWith('0')) {
+        tPhone = tPhone.substring(1);
+      }
+      if (tWhatsapp.startsWith('0')) {
+        tWhatsapp = tWhatsapp.substring(1);
+      }
+      return tPhone === normalizedPhone || tWhatsapp === normalizedPhone || tPhone === phone || tWhatsapp === phone;
+    }) || null;
   },
 
   async createTenant(tenantData: any): Promise<any> {
     const tenants = await readCSV<any>(TENANTS_CSV);
+    // Map existing tenants to standard format
+    const mappedTenants = tenants.map(mapTenantsToTenant);
     const tenantId = tenantData.tenant_id || `tenant_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     const newTenant = {
@@ -229,8 +331,8 @@ export const csvStorage = {
       updated_at: new Date().toISOString()
     };
 
-    tenants.push(newTenant);
-    await writeCSV(TENANTS_CSV, tenants, [
+    mappedTenants.push(newTenant);
+    await writeCSV(TENANTS_CSV, mappedTenants, [
       'tenant_id', 'name', 'phone', 'whatsapp_number', 'email', 
       'city', 'localities', 'budget_min', 'budget_max', 
       'move_in_date', 'bedrooms', 'amenities', 'preferences', 
@@ -242,16 +344,18 @@ export const csvStorage = {
 
   async updateTenant(tenantId: string, updates: any): Promise<any | null> {
     const tenants = await readCSV<any>(TENANTS_CSV);
-    const index = tenants.findIndex(t => t.tenant_id === tenantId);
+    // Map existing tenants to standard format
+    const mappedTenants = tenants.map(mapTenantsToTenant);
+    const index = mappedTenants.findIndex(t => t.tenant_id === tenantId);
     if (index === -1) return null;
     
-    tenants[index] = {
-      ...tenants[index],
+    mappedTenants[index] = {
+      ...mappedTenants[index],
       ...updates,
       updated_at: new Date().toISOString()
     };
     
-    await writeCSV(TENANTS_CSV, tenants, [
+    await writeCSV(TENANTS_CSV, mappedTenants, [
       'tenant_id', 'name', 'phone', 'whatsapp_number', 'email', 
       'city', 'localities', 'budget_min', 'budget_max', 
       'move_in_date', 'bedrooms', 'amenities', 'preferences', 

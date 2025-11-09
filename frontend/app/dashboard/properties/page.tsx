@@ -133,6 +133,11 @@ export default function PropertiesPage() {
         )
       }
 
+      // For owners, show only 5 properties
+      if (userType === 'owner') {
+        filteredProperties = filteredProperties.slice(0, 5)
+      }
+
       setProperties(filteredProperties)
     } catch (error) {
       console.error('Failed to fetch properties:', error)

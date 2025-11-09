@@ -28,13 +28,16 @@ import { tenantsRouter } from './routes/tenants';
 import { leadsRouter } from './routes/leads';
 
 const app = express();
+// Cloud Run uses PORT environment variable, default to 8080 for Cloud Run, 3001 for local
 const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  origin: '*', // Allow all origins
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(morgan('dev'));
 app.use(express.json());

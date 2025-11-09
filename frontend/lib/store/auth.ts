@@ -14,6 +14,7 @@ interface AuthState {
   token: string | null
   isLoading: boolean
   userType: 'tenant' | 'owner' | null
+  setUserType: (userType: 'tenant' | 'owner') => void
   login: (phoneNumber: string, password: string, userType?: 'tenant' | 'owner') => Promise<void>
   register: (email: string, password: string, name: string, company_name?: string) => Promise<void>
   logout: () => void
@@ -23,8 +24,13 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
-  isLoading: true,
+  isLoading: false,
   userType: null,
+
+  setUserType: (userType: 'tenant' | 'owner') => {
+    localStorage.setItem('userType', userType)
+    set({ userType, user: { id: 'guest', email: 'guest@homemates.com', name: userType === 'tenant' ? 'Tenant' : 'Owner' } })
+  },
 
   login: async (phoneNumber: string, password: string, userType: 'tenant' | 'owner' = 'tenant') => {
     const response = await apiClient.post('/auth/login', { 

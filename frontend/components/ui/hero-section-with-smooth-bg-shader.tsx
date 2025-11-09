@@ -37,7 +37,7 @@ export function HeroSectionBackground({
   }, [])
 
   return (
-    <div className={`fixed inset-0 w-screen h-screen ${className}`}>
+    <div className={`fixed inset-0 w-screen h-screen pointer-events-none ${className}`} style={{ zIndex: 0 }}>
       {mounted && (
         <>
           <MeshGradient
