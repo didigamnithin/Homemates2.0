@@ -14,12 +14,18 @@ out/
 
 # Environment variables
 .env
+.env.*
+!.env.example
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 backend/.env
+backend/.env.*
+!backend/.env.example
 frontend/.env.local
+frontend/.env.*
+!frontend/.env.example
 
 # Data files (JSON storage)
 backend/data/

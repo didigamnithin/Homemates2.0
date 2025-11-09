@@ -75,8 +75,10 @@ push_to_github() {
         fi
     fi
     
-    # Add all changes
+    # Add all changes (excluding .env files)
     git add .
+    # Remove .env files from staging if they were added
+    git reset HEAD .env .env.local .env.* 2>/dev/null || true
     
     # Check if there are changes to commit
     if git diff --staged --quiet && git diff --quiet; then
